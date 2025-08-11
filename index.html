@@ -228,9 +228,6 @@
 
       video.addEventListener('ended', showChat);
 
-
-      // Previne que gesto de rolagem faça bounce em iOS enquanto o vídeo cobre a tela
-      window.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
     })();
       // ===== Chat Logic =====
     (function chatLogic(){
