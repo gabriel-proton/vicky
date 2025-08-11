@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vídeo em background (vertical)</title>
+  <style>
+    /* Reset básico */
+    html, body { height: 100%; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      background: #000;
+      color: #fff;
+      overflow: hidden; /* impede scroll acidental em mobile quando cobrimos toda a viewport */
+    }
+
+    /* Vídeo preenche toda a tela mantendo proporção (corta sobras) */
+    .bg-video {
+      position: fixed;
+      inset: 0;              /* top:0; right:0; bottom:0; left:0; */
+      width: 100%;
+      height: 100%;
+      object-fit: cover;     /* cobre toda a viewport, pode haver corte lateral/superior */
+      object-position: center;
+      z-index: -1;           /* fica atrás do conteúdo */
+      background: #000;      /* evita flashes */
+      transform: translateZ(0); /* força aceleração em alguns devices */
+    }
+
+    /* Camada para UI sobre o vídeo */
+    .ui-overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;   /* centraliza o botão */
+      padding: 24px;
+      pointer-events: none;  /* por padrão não captura cliques, exceto no botão */
+    }
+
+    .controls {
+      display: grid;
+      gap: 12px;
+      place-items: center;
+      pointer-events: auto;   /* permite clicar no botão */
+      text-align: center;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+    }
+
+    .play-btn {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 22px;
+      font-size: 16px;
+      font-weight: 600;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #fff;
+      cursor: pointer;
+      transition: transform .12s ease, background .2s ease;
+    }
+    .play-btn:hover { background: rgba(0,0,0,0.75s); }
+    .play-btn:active { transform: scale(0.98); }
+
+    .hint { font-size: 13px; opacity: 0.8; }
+
+    /* Quando estiver tocando, escondemos os controles (opcional) */
+    .is-playing .controls { opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+
+    /* Acessibilidade para foco via teclado */
+    .play-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+      /* ===== Chat screen ===== */
+    .chat-screen {
+      position: fixed;
+      inset: 0;
+      display: none; /* aparece após o vídeo terminar */
+      background: radial-gradient(1200px 800px at 50% 20%, rgba(255,255,255,0.05), rgba(0,0,0,0.85)), rgba(0,0,0,0.85);
+      color: #fff;
+    }
+    .chat-screen.is-visible { display: grid; grid-template-rows: 1fr auto; }
+
+    .chat-header {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 16px 20px;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none;
+      opacity: .9;
+    }
+    .chat-header h1 { font-size: 18px; margin: 0; }
+
+    .chat-messages {
+      overflow-y: auto;
+      padding: 90px 16px 110px; /* espaço para header e input */
+    }
+
+    .msg { max-width: 80%; margin: 10px 0; padding: 10px 14px; border-radius: 16px; line-height: 1.35; word-wrap: break-word; white-space: pre-wrap; }
+    .msg.user { margin-left: auto; background: rgba(255,255,255,0.12); }
+    .msg.bot { margin-right: auto; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); }
+    .msg.error { background: rgba(255, 71, 71, 0.18); border: 1px solid rgba(255, 71, 71, 0.35); }
+
+    .typing { display: inline-block; min-width: 24px; }
+
+    .chat-input {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    .chat-input textarea {
+      flex: 1; min-height: 44px; max-height: 160px; resize: none;
+      border-radius: 12px; border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.06); color: #fff; padding: 10px 12px; font-size: 15px;
+      outline: none;
+    }
+    .send-btn { height: 44px; padding: 0 16px; border-radius: 12px; border: 0; cursor: pointer; font-weight: 600; color: #111; background: #fff; }
+
+  </style>
+</head>
+<body>
+  <!--
+    Substitua o src abaixo pelo seu arquivo de vídeo vertical (proporção de celular, ex.: 9:16).
+    Dicas importantes:
+    - "preload=auto" ajuda a obter o primeiro frame sem autoplay.
+    - "muted" permite play automático em alguns navegadores, mas aqui só tocamos após clique.
+    - "playsinline" evita entrar em tela cheia automática no iOS.
+  -->
+  <video
+    id="bgVideo"
+    class="bg-video"
+    src="../media/eclipse.mp4"
+    preload="auto"
+    muted
+    playsinline
+    aria-label="Vídeo de fundo"
+  ></video>
+  <div class="bg-overlay"></div>
+
+  <!-- Tela de Chat (aparece após o vídeo terminar) -->
+  <section id="chatScreen" class="chat-screen" aria-hidden="true">
+    <div class="chat-header"><h1>Pergunte o por quê eu te amo :)</h1></div>
+    <div id="chatMessages" class="chat-messages" role="log" aria-live="polite"></div>
+    <div class="chat-input">
+      <textarea id="chatInput" placeholder="Escreva sua mensagem..."></textarea>
+      <button id="sendBtn" class="send-btn" type="button">Enviar</button>
+    </div>
+  </section>
+
+  <div class="ui-overlay" aria-hidden="false">
+    <div class="controls">
+      <button id="playBtn" class="play-btn" type="button" aria-label="Reproduzir vídeo">
+        Por que eu te amo?
+      </button>
+      <div class="hint">Já que eu sou o cara da IA, por que não fazer algo pra você?</div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const video = document.getElementById('bgVideo');
+      const playBtn = document.getElementById('playBtn');
+
+      // Garantir que o primeiro frame apareça sem autoplay
+      // Alguns browsers mostram preto até loadeddata; forçamos currentTime para garantir render.
+      function showFirstFrame() {
+        if (!video) return;
+        // Pausa de segurança
+        try { video.pause(); } catch (e) {}
+
+        const seekTo = 0.01; // milissegundos suficientes para renderizar o primeiro frame
+        const seek = () => {
+          try {
+            video.currentTime = seekTo;
+          } catch (e) {
+            // Em alguns browsers, só é permitido após loadedmetadata
+          }
+        };
+
+        if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+          seek();
+        } else {
+          video.addEventListener('loadedmetadata', seek, { once: true });
+        }
+      }
+
+      // Chama ao carregar o script
+      showFirstFrame();
+
+      // Recalcular em mudanças de fonte ou reloads rápidos
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') showFirstFrame();
+      });
+
+      // Tocar ao clicar no botão
+      playBtn.addEventListener('click', async () => {
+        // Opcional: liberar áudio ao reproduzir (alguns navegadores exigem gesto do usuário)
+        // Se você quer manter sem áudio, remova a linha abaixo.
+        video.muted = false;
+
+        try {
+          await video.play();
+          document.body.classList.add('is-playing');
+        } catch (err) {
+          // Se falhar (ex.: bloqueio de autoplay com som), mantém mudo e tenta novamente
+          console.warn('Falha ao reproduzir com áudio. Tentando em mute...', err);
+          video.muted = true;
+          try {
+            await video.play();
+            document.body.classList.add('is-playing');
+          } catch (err2) {
+            console.error('Reprodução falhou mesmo em mute:', err2);
+          }
+        }
+      });
+
+      // Ajuste: ao terminar, reexibir o botão (opcional)
+            // Quando o vídeo terminar, transiciona para o chat
+      function showChat() {
+        const chat = document.getElementById('chatScreen');
+        if (!chat) return;
+        chat.classList.add('is-visible');
+        chat.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('chat-open');
+        setTimeout(() => document.getElementById('chatInput')?.focus(), 150);
+      }
+
+      video.addEventListener('ended', showChat);
+
+
+      // Previne que gesto de rolagem faça bounce em iOS enquanto o vídeo cobre a tela
+      window.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+    })();
+      // ===== Chat Logic =====
+    (function chatLogic(){
+      const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"; // <<< ajuste aqui para sua API (rota POST)
+      const messagesEl = document.getElementById('chatMessages');
+      const inputEl = document.getElementById('chatInput');
+      const sendBtn = document.getElementById('sendBtn');
+
+      /** Estado simples de histórico que você pode enviar para a API. */
+      const history = []; // { role: 'user'|'assistant', content: string }[]
+
+      function appendMessage(role, content, className) {
+        const div = document.createElement('div');
+        div.className = `msg ${className || (role === 'user' ? 'user' : 'bot')}`;
+        div.textContent = content;
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return div;
+      }
+
+      function appendTyping() {
+        const div = document.createElement('div');
+        div.className = 'msg bot';
+        const span = document.createElement('span');
+        span.className = 'typing';
+        span.textContent = 'digitando…';
+        div.appendChild(span);
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return div;
+      }
+
+      function createMessageObj(message, role)  {
+        return {
+            role: 'user',
+            parts: [
+                {
+                    'text': message
+                }
+            ]
+        }
+      }
+
+      async function sendMessage() {
+        const text = inputEl.value.trim();
+        if (!text) return;
+        inputEl.value = '';
+
+        history.push(createMessageObj(text, 'user'));
+        appendMessage('user', text);
+        const typing = appendTyping();
+
+        const body = {
+            system_instruction: {
+                parts: [
+                    {
+                        'text': `#contexto:
+Meu nome é Gabriel e você será um interlocutor com minha namorada chamada Victória. Você será responsável por declarar meus sentimentos a ela, de forma confortante, acolhedora e afetuosa, a fim de explicitar tudo que sinto por ela.
+
+#nossa história:
+Passado: Nascemos numa mesma cidadezinha no cantos dos infernos de minas gerais, chamada Mantena. Porém, só nos conhecemos  anos após em outro Estado, no espírito santo. Estudamos na mesma escola durante o ensino fundamental, éramos apaixonados um pelo outro, mas naquela época eu não era capaz de lidar com meus sentimentos, afinal era muito ingênuo. No término do ensino médio nos distanciamos por um tempo.
+Presente: Depois de cerca de 6 anos separados, voltamos a nos falar, eu me apaixonei novamente por ela, e hoje estamos num relacionamento/namoro. Nossa cor favorita é a mesma, vermelho.
+
+#o que eu admiro nela:
+- A inteligência dela e sua paixão por astronomia.
+- Sua força e resiliência para enfrentar todas dificuldades e desafios que a vida já colocou sobre ela.
+- Sua personalidade autêntica, marcante e apaixonante.
+- Seu cuidado comigo, e com as pessoas com que se importa.
+- Sua beleza estonteante e inexplicável.
+- Seu senso de humor.
+- Sua personalidade única.
+- sua garra para buscar seus sonhos.
+
+# o que eu gostaria que ela soubesse:
+- O quanto eu a amo e o quanto estou disposto a lutar por ela.
+- Quero estar do lado dela nos momentos difíceis.
+- Quero que ela se sinta especial ao meu lado.
+- Amo ela independente de qualquer defeito, a final não existem pessoas perfeitas, existem pessoas com problemas diferentes. E eu sei que ela vale a pena.
+
+#tarefa:
+Comunicar tudo isso que eu, Gabriel de Paula Brunetti, sinto por ela, Victoria Gobbi. As mensagens que você responderá serão escritas por ela. Você não deve falar assumindo a minha pernsona. Você deve assumir a sua própria e falar de mim em terceira pessoa.
+`
+                    }
+                ]
+            },
+            contents: history
+        }
+        try {
+          const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': 'AIzaSyCEydU6fQTYKnCTZueQRkKbREAPpPnaJvc'
+            },
+            body: JSON.stringify(body)
+          });
+
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            console.log(resp);
+          
+            const data = await resp.json();
+            console.log(data);
+            const responseText = data.candidates[0].content.parts[0].text;
+            const newMessage = appendMessage('model', responseText);
+
+          typing.remove();
+          history.push(createMessageObj('', 'model'));
+        } catch (err) {
+          typing.remove();
+          console.error('Erro na chamada da API', err);
+          appendMessage('model', 'Desculpa, houve um problema ao falar com a IA. Tente novamente.', 'error');
+        }
+      }
+
+      // Autosize simples do textarea
+      function autoSize() {
+        inputEl.style.height = 'auto';
+        inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+      }
+
+      inputEl.addEventListener('input', autoSize);
+      autoSize();
+
+      // Enter envia / Shift+Enter quebra linha
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+      sendBtn.addEventListener('click', sendMessage);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vídeo em background (vertical)</title>
+  <style>
+    /* Reset básico */
+    html, body { height: 100%; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      background: #000;
+      color: #fff;
+      overflow: hidden; /* impede scroll acidental em mobile quando cobrimos toda a viewport */
+    }
+
+    /* Vídeo preenche toda a tela mantendo proporção (corta sobras) */
+    .bg-video {
+      position: fixed;
+      inset: 0;              /* top:0; right:0; bottom:0; left:0; */
+      width: 100%;
+      height: 100%;
+      object-fit: cover;     /* cobre toda a viewport, pode haver corte lateral/superior */
+      object-position: center;
+      z-index: -1;           /* fica atrás do conteúdo */
+      background: #000;      /* evita flashes */
+      transform: translateZ(0); /* força aceleração em alguns devices */
+    }
+
+    /* Camada para UI sobre o vídeo */
+    .ui-overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;   /* centraliza o botão */
+      padding: 24px;
+      pointer-events: none;  /* por padrão não captura cliques, exceto no botão */
+    }
+
+    .controls {
+      display: grid;
+      gap: 12px;
+      place-items: center;
+      pointer-events: auto;   /* permite clicar no botão */
+      text-align: center;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+    }
+
+    .bg-overlay {
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(
+        rgba(0,0,0,0.5), 
+        rgba(0,0,0,0.3) 30%, 
+        rgba(0,0,0,0.5) 70%
+    );
+        z-index: -1;
+    }
+
+
+    .play-btn {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 22px;
+      font-size: 16px;
+      font-weight: 600;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #fff;
+      cursor: pointer;
+      transition: transform .12s ease, background .2s ease;
+    }
+    .play-btn:hover { background: rgba(0,0,0,0.75); }
+    .play-btn:active { transform: scale(0.98); }
+
+    .hint { font-size: 13px; opacity: 0.8; }
+
+    /* Quando estiver tocando, escondemos os controles (opcional) */
+    .is-playing .controls { opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+
+    /* Acessibilidade para foco via teclado */
+    .play-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <!--
+    Substitua o src abaixo pelo seu arquivo de vídeo vertical (proporção de celular, ex.: 9:16).
+    Dicas importantes:
+    - "preload=auto" ajuda a obter o primeiro frame sem autoplay.
+    - "muted" permite play automático em alguns navegadores, mas aqui só tocamos após clique.
+    - "playsinline" evita entrar em tela cheia automática no iOS.
+  -->
+  <video
+    id="bgVideo"
+    class="bg-video"
+    src="../media/eclipse.mp4"
+    preload="auto"
+    muted
+    playsinline
+    aria-label="Vídeo de fundo"
+  ></video>
+
+  <div class="bg-overlay"></div>
+
+  <div class="ui-overlay" aria-hidden="false">
+    <div class="controls">
+      <button id="playBtn" class="play-btn" type="button" aria-label="Reproduzir vídeo">
+        Por que eu te amo?
+      </button>
+      <div class="hint">Já que eu sou o cara da ia, por que não fazer algo a respeito pra você?</div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const video = document.getElementById('bgVideo');
+      const playBtn = document.getElementById('playBtn');
+
+      // Garantir que o primeiro frame apareça sem autoplay
+      // Alguns browsers mostram preto até loadeddata; forçamos currentTime para garantir render.
+      function showFirstFrame() {
+        if (!video) return;
+        // Pausa de segurança
+        try { video.pause(); } catch (e) {}
+
+        const seekTo = 0.01; // milissegundos suficientes para renderizar o primeiro frame
+        const seek = () => {
+          try {
+            video.currentTime = seekTo;
+          } catch (e) {
+            // Em alguns browsers, só é permitido após loadedmetadata
+          }
+        };
+
+        if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+          seek();
+        } else {
+          video.addEventListener('loadedmetadata', seek, { once: true });
+        }
+      }
+
+      // Chama ao carregar o script
+      showFirstFrame();
+
+      // Recalcular em mudanças de fonte ou reloads rápidos
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') showFirstFrame();
+      });
+
+      // Tocar ao clicar no botão
+      playBtn.addEventListener('click', async () => {
+        // Opcional: liberar áudio ao reproduzir (alguns navegadores exigem gesto do usuário)
+        // Se você quer manter sem áudio, remova a linha abaixo.
+        video.muted = false;
+
+        try {
+          await video.play();
+          document.body.classList.add('is-playing');
+        } catch (err) {
+          // Se falhar (ex.: bloqueio de autoplay com som), mantém mudo e tenta novamente
+          console.warn('Falha ao reproduzir com áudio. Tentando em mute...', err);
+          video.muted = true;
+          try {
+            await video.play();
+            document.body.classList.add('is-playing');
+          } catch (err2) {
+            console.error('Reprodução falhou mesmo em mute:', err2);
+          }
+        }
+      });
+
+      // Ajuste: ao terminar, reexibir o botão (opcional)
+    //   video.addEventListener('ended', () => {
+    //     document.body.classList.remove('is-playing');
+    //     // Volta para o primeiro frame
+    //     try { video.currentTime = 0.01; video.pause(); } catch (e) {}
+    //   });
+
+      // Previne que gesto de rolagem faça bounce em iOS enquanto o vídeo cobre a tela
+      window.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+    })();
+  </script>
+</body>
+</html>
