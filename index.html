@@ -16,6 +16,10 @@
       overflow: hidden; /* impede scroll acidental em mobile quando cobrimos toda a viewport */
     }
 
+    body.chat-open {
+      overflow: auto;
+    }
+
     /* Vídeo preenche toda a tela mantendo proporção (corta sobras) */
     .bg-video {
       position: fixed;
@@ -94,6 +98,10 @@
     .chat-messages {
       overflow-y: auto;
       padding: 90px 16px 110px; /* espaço para header e input */
+      -webkit-overflow-scrolling: touch; /* inércia no iOS */
+      overscroll-behavior: contain; /* evita bounce da página */
+      scroll-behavior: smooth;
+      height: 100%;
     }
 
     .msg { max-width: 80%; margin: 10px 0; padding: 10px 14px; border-radius: 16px; line-height: 1.35; word-wrap: break-word; white-space: pre-wrap; }
@@ -227,6 +235,14 @@
       }
 
       video.addEventListener('ended', showChat);
+      
+      function preventIntroScroll(e){
+        // Só bloqueia o scroll durante a intro (quando o chat ainda não abriu)
+        if (!document.body.classList.contains('chat-open')) {
+          e.preventDefault();
+        }
+      }
+      window.addEventListener('touchmove', preventIntroScroll, { passive: false }); }, { passive: false });
 
     })();
       // ===== Chat Logic =====
